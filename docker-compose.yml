@@ -1,0 +1,136 @@
+version: '3'
+
+networks:
+  general:
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/data/logs/nginx:/var/log/nginx
+      - ./src/portfolios-spa/dist/_nuxt:/var/www/html/clarityfinance-com/public/_nuxt:delegated
+    volumes_from:
+      - php
+    depends_on:
+      - php
+      - mysql
+    links:
+      - php
+    networks:
+      - general
+
+  mysql:
+    container_name: database
+    image: mysql:8.0.25
+    command: mysqld --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./docker/data/mysql:/var/lib/mysql
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/my.cnf
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: general_db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: admin
+      MYSQL_ROOT_PASSWORD: admin
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    networks:
+      - general
+
+  php:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: php
+    volumes:
+      - ./src/app:/var/www/html:delegated
+      - ./docker/data/logs/xdebug:/var/log/xdebug
+    ports:
+      - "9000:9000"
+    networks:
+      - general
+
+  redis:
+    image: redis:6.2.4-alpine3.13
+    container_name: redis
+    restart: on-failure:3
+    volumes:
+      - ./docker/data/redis:/data
+    env_file:
+      - ./src/app/.env
+    ports:
+      - "6379:6379"
+    networks:
+      - general
+
+  elasticsearch:
+    container_name: elasticsearch
+    image: elasticsearch:7.13.3
+    environment:
+      - discovery.type=single-node
+    volumes:
+      - ./docker/data/elasticsearch:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - general
+
+  kibana:
+    container_name: kibana
+    image: docker.elastic.co/kibana/kibana:7.13.3
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    networks:
+      - general
+
+  composer:
+    build:
+      context: .
+      dockerfile: docker/composer/dockerfile
+    container_name: composer
+    volumes:
+      - ./src:/var/www/html
+    working_dir: /var/www/html
+    depends_on:
+      - php
+    user: user_app
+    networks:
+      - general
+    entrypoint: ['composer', '--ignore-platform-reqs']
+
+  npm:
+    image: node:lts-alpine3.13
+    container_name: npm
+    volumes:
+      - ./src:/var/www/html
+    ports:
+      - "3000:3000"
+    working_dir: /var/www/html
+    entrypoint: ['npm']
+
+  artisan:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: artisan
+    volumes:
+      - ./src:/var/www/html:delegated
+    depends_on:
+      - mysql
+    working_dir: /var/www/html
+    user: user_app
+    entrypoint: ['php', '/var/www/html/app/artisan']
+    networks:
+      - general

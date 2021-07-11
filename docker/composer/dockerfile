@@ -1,0 +1,5 @@
+FROM composer:2
+
+RUN addgroup -g 1000 user_app && adduser -G user_app -g user_app -s /bin/sh -D user_app
+
+WORKDIR /var/www/html
